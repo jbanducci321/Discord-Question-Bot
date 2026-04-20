@@ -1,0 +1,27 @@
+{
+  "name": "discord-question-bot",
+  "version": "1.0.0",
+  "description": "Discord Quote Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbanducci321/Discord-Question-Bot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/jbanducci321/Discord-Question-Bot/issues"
+  },
+  "homepage": "https://github.com/jbanducci321/Discord-Question-Bot#readme",
+  "dependencies": {
+    "discord.js": "^14.26.3",
+    "dotenv": "^17.4.2",
+    "mysql2": "^3.22.1"
+  }
+}
