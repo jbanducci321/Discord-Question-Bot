@@ -35,6 +35,10 @@ const commands = [
                 .setRequired(false)),
 
     new SlashCommandBuilder()
+        .setName('stats')
+        .setDescription('Show quote statistics'),
+
+    new SlashCommandBuilder()
         .setName('editquote')
         .setDescription('Edit an existing quote')
         .addIntegerOption(option =>

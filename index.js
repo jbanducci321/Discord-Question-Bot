@@ -56,7 +56,6 @@ async function getRandomQuote(excludeId = null) {
 
     const [rows] = await pool.query(sql, params);
 
-    // Fallback: if excluding the last quote leaves us with nothing
     if (rows.length === 0 && excludeId !== null) {
         const [fallbackRows] = await pool.query(`
             SELECT id, quote_text, quoted_person
@@ -91,7 +90,6 @@ async function getRandomQuoteByPerson(person, excludeId = null) {
 
     const [rows] = await pool.query(sql, params);
 
-    // Fallback in case that person only has one quote and it matches excludeId
     if (rows.length === 0 && excludeId !== null) {
         const [fallbackRows] = await pool.query(`
             SELECT id, quote_text, quoted_person
@@ -220,8 +218,31 @@ client.on(Events.InteractionCreate, async interaction => {
 
     try {
         if (commandName === 'addquote') {
-            const person = interaction.options.getString('person');
-            const quote = interaction.options.getString('quote');
+            const person = interaction.options.getString('person').trim();
+            const quote = interaction.options.getString('quote').trim();
+
+            const [duplicateRows] = await pool.query(
+                `
+                SELECT id, quote_text, quoted_person
+                FROM quote_bot_quotes
+                WHERE LOWER(TRIM(quoted_person)) = LOWER(TRIM(?))
+                  AND LOWER(TRIM(quote_text)) = LOWER(TRIM(?))
+                LIMIT 1
+                `,
+                [person, quote]
+            );
+
+            if (duplicateRows.length > 0) {
+                const existing = duplicateRows[0];
+
+                await interaction.reply({
+                    content:
+                        `That quote already exists as **#${existing.id}**.\n` +
+                        `**${existing.quoted_person}**:\n"${existing.quote_text}"`,
+                    ephemeral: true
+                });
+                return;
+            }
 
             const sql = `
                 INSERT INTO quote_bot_quotes
@@ -335,6 +356,55 @@ client.on(Events.InteractionCreate, async interaction => {
             });
         }
 
+        else if (commandName === 'stats') {
+            const [[totalsRow]] = await pool.query(`
+                SELECT
+                    COUNT(*) AS total_quotes,
+                    COUNT(DISTINCT quoted_person) AS total_people
+                FROM quote_bot_quotes
+            `);
+
+            const [topQuotedRows] = await pool.query(`
+                SELECT quoted_person, COUNT(*) AS quote_count
+                FROM quote_bot_quotes
+                GROUP BY quoted_person
+                ORDER BY quote_count DESC, quoted_person ASC
+                LIMIT 1
+            `);
+
+            const [topAdderRows] = await pool.query(`
+                SELECT
+                    added_by_username,
+                    added_by_user_id,
+                    COUNT(*) AS added_count
+                FROM quote_bot_quotes
+                GROUP BY added_by_user_id, added_by_username
+                ORDER BY added_count DESC, added_by_username ASC
+                LIMIT 1
+            `);
+
+            const topQuoted = topQuotedRows[0];
+            const topAdder = topAdderRows[0];
+
+            let message =
+                `📊 **Quote Stats**\n` +
+                `Total quotes: **${totalsRow.total_quotes}**\n` +
+                `People quoted: **${totalsRow.total_people}**\n`;
+
+            if (topQuoted) {
+                message += `Most quoted person: **${topQuoted.quoted_person}** (${topQuoted.quote_count})\n`;
+            }
+
+            if (topAdder) {
+                message += `Top quote adder: **${topAdder.added_by_username}** (${topAdder.added_count})\n`;
+            }
+
+            await interaction.reply({
+                content: message,
+                ephemeral: true
+            });
+        }
+
         else if (commandName === 'editquote') {
             const id = interaction.options.getInteger('id');
             const newQuote = interaction.options.getString('quote');
@@ -358,13 +428,14 @@ client.on(Events.InteractionCreate, async interaction => {
             const updatedQuote = newQuote ?? existing.quote_text;
             const updatedPerson = newPerson ?? existing.quoted_person;
 
-            const sql = `
+            await pool.query(
+                `
                 UPDATE quote_bot_quotes
                 SET quote_text = ?, quoted_person = ?
                 WHERE id = ?
-            `;
-
-            await pool.query(sql, [updatedQuote, updatedPerson, id]);
+                `,
+                [updatedQuote, updatedPerson, id]
+            );
 
             await interaction.reply({
                 content:
