@@ -39,6 +39,26 @@ const commands = [
         .setDescription('Show quote statistics'),
 
     new SlashCommandBuilder()
+        .setName('addbirthday')
+        .setDescription('Add or update a birthday for a user')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('Whose birthday this is')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('month')
+                .setDescription('Birth month (1-12)')
+                .setRequired(true)
+                .setMinValue(1)
+                .setMaxValue(12))
+        .addIntegerOption(option =>
+            option.setName('day')
+                .setDescription('Birth day (1-31)')
+                .setRequired(true)
+                .setMinValue(1)
+                .setMaxValue(31)),
+
+    new SlashCommandBuilder()
         .setName('editquote')
         .setDescription('Edit an existing quote')
         .addIntegerOption(option =>

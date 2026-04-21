@@ -14,12 +14,22 @@ const client = new Client({
 
 const BOT_CHANNEL_ID = process.env.BOT_CHANNEL_ID;
 const GENERAL_CHANNEL_ID = process.env.GENERAL_CHANNEL_ID;
+const APP_TIMEZONE = 'America/Los_Angeles';
 
-// Daily at 8:00 AM
+// Daily at 8:00 AM LA time
 const DAILY_CRON = '0 8 * * *';
 
-// Every hour at minute 0
+// Every hour at minute 0 LA time
 const HOURLY_CHANCE_CRON = '0 * * * *';
+
+// Every day at 6:07 PM LA time
+const SIXTY_SEVEN_CRON = '7 18 * * *';
+
+// Every day at 00:00 LA time
+const BIRTHDAY_CHECK_CRON = '0 0 * * *';
+
+// Hardcoded 67 ping target
+const SIXTY_SEVEN_USER_ID = '1016444274625237042'; // AKA Shannyn
 
 // Hourly chance system
 const BASE_HOURLY_CHANCE = 5;
@@ -35,6 +45,25 @@ function formatQuote(row) {
 // Keep IDs here so listquotes is useful for edit/delete
 function formatQuoteInline(row) {
     return `#${row.id} - ${row.quoted_person}: "${row.quote_text}"`;
+}
+
+function isValidMonthDay(month, day) {
+    const daysInMonth = {
+        1: 31,
+        2: 29,
+        3: 31,
+        4: 30,
+        5: 31,
+        6: 30,
+        7: 31,
+        8: 31,
+        9: 30,
+        10: 31,
+        11: 30,
+        12: 31
+    };
+
+    return day >= 1 && day <= (daysInMonth[month] ?? 0);
 }
 
 async function getRandomQuote(excludeId = null) {
@@ -164,6 +193,8 @@ client.once(Events.ClientReady, async () => {
         } catch (err) {
             console.error('Failed to post daily quote:', err);
         }
+    }, {
+        timezone: APP_TIMEZONE
     });
 
     // Every hour, chance starts at 5% and increases by 1% for each miss
@@ -203,10 +234,80 @@ client.once(Events.ClientReady, async () => {
         } catch (err) {
             console.error('Failed hourly random quote check:', err);
         }
+    }, {
+        timezone: APP_TIMEZONE
     });
 
-    console.log('Daily quote scheduler started.');
-    console.log('Hourly escalating chance quote scheduler started.');
+    // ============================================================
+    // 67 FEATURE
+    // Comment out or remove this whole block if it gets too annoying
+    // ============================================================
+    cron.schedule(SIXTY_SEVEN_CRON, async () => {
+        try {
+            const generalChannel = await fetchGeneralChannel();
+
+            await generalChannel.send({
+                content: `<@${SIXTY_SEVEN_USER_ID}> 67`
+            });
+
+            console.log('Posted daily 67 message.');
+        } catch (err) {
+            console.error('Failed to post 67 message:', err);
+        }
+    }, {
+        timezone: APP_TIMEZONE
+    });
+
+    // Birthday checker: every day right at 00:00 LA time
+    cron.schedule(BIRTHDAY_CHECK_CRON, async () => {
+        try {
+            const now = new Date();
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: APP_TIMEZONE,
+                month: 'numeric',
+                day: 'numeric'
+            });
+
+            const parts = formatter.formatToParts(now);
+            const month = Number(parts.find(part => part.type === 'month')?.value);
+            const day = Number(parts.find(part => part.type === 'day')?.value);
+
+            const [rows] = await pool.query(
+                `
+                SELECT birthday_user_id, birthday_username
+                FROM quote_bot_birthdays
+                WHERE month = ? AND day = ?
+                `,
+                [month, day]
+            );
+
+            if (rows.length === 0) {
+                console.log(`No birthdays found for ${month}/${day}.`);
+                return;
+            }
+
+            const generalChannel = await fetchGeneralChannel();
+            const mentions = rows.map(row => `<@${row.birthday_user_id}>`).join(' ');
+
+            await generalChannel.send({
+                content: `🎉 Happy birthday ${mentions}!`
+            });
+
+            // TODO: Later, try sending each birthday user a DM too.
+            // This can fail depending on privacy settings / DM availability.
+
+            console.log(`Posted birthday message for ${month}/${day}.`);
+        } catch (err) {
+            console.error('Failed birthday check:', err);
+        }
+    }, {
+        timezone: APP_TIMEZONE
+    });
+
+    console.log(`Daily quote scheduler started (${APP_TIMEZONE}).`);
+    console.log(`Hourly 5% quote scheduler started (${APP_TIMEZONE}).`);
+    console.log(`67 scheduler started (${APP_TIMEZONE}).`);
+    console.log(`Birthday scheduler started (${APP_TIMEZONE}).`);
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -263,6 +364,48 @@ client.on(Events.InteractionCreate, async interaction => {
                 content:
                     `Quote added with ID **${result.insertId}**.\n` +
                     `**${person}**:\n"${quote}"`,
+                ephemeral: true
+            });
+        }
+
+        else if (commandName === 'addbirthday') {
+            const targetUser = interaction.options.getUser('user');
+            const month = interaction.options.getInteger('month');
+            const day = interaction.options.getInteger('day');
+
+            if (!isValidMonthDay(month, day)) {
+                await interaction.reply({
+                    content: 'That is not a valid month/day combination.',
+                    ephemeral: true
+                });
+                return;
+            }
+
+            await pool.query(
+                `
+                INSERT INTO quote_bot_birthdays
+                    (birthday_user_id, birthday_username, month, day, created_by_user_id, created_by_username)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    birthday_username = VALUES(birthday_username),
+                    month = VALUES(month),
+                    day = VALUES(day),
+                    created_by_user_id = VALUES(created_by_user_id),
+                    created_by_username = VALUES(created_by_username)
+                `,
+                [
+                    targetUser.id,
+                    targetUser.username,
+                    month,
+                    day,
+                    interaction.user.id,
+                    interaction.user.username
+                ]
+            );
+
+            await interaction.reply({
+                content:
+                    `Saved birthday for <@${targetUser.id}> as **${month}/${day}**.`,
                 ephemeral: true
             });
         }
