@@ -2,7 +2,6 @@ import 'dotenv/config';
 import {
     Client,
     GatewayIntentBits,
-    PermissionsBitField,
     Events,
     ChannelType
 } from 'discord.js';
@@ -22,6 +21,13 @@ const DAILY_CRON = '0 8 * * *';
 // Every hour at minute 0
 const HOURLY_CHANCE_CRON = '0 * * * *';
 
+// Hourly chance system
+const BASE_HOURLY_CHANCE = 5;
+let currentHourlyChance = BASE_HOURLY_CHANCE;
+
+// Track last displayed quote so random posts do not repeat back-to-back
+let lastPostedQuoteId = null;
+
 function formatQuote(row) {
     return `**${row.quoted_person}**:\n"${row.quote_text}"`;
 }
@@ -31,29 +37,80 @@ function formatQuoteInline(row) {
     return `#${row.id} - ${row.quoted_person}: "${row.quote_text}"`;
 }
 
-async function getRandomQuote() {
-    const sql = `
+async function getRandomQuote(excludeId = null) {
+    let sql = `
         SELECT id, quote_text, quoted_person
         FROM quote_bot_quotes
+    `;
+    const params = [];
+
+    if (excludeId !== null) {
+        sql += ` WHERE id != ?`;
+        params.push(excludeId);
+    }
+
+    sql += `
         ORDER BY RAND()
         LIMIT 1
     `;
 
-    const [rows] = await pool.query(sql);
+    const [rows] = await pool.query(sql, params);
+
+    // Fallback: if excluding the last quote leaves us with nothing
+    if (rows.length === 0 && excludeId !== null) {
+        const [fallbackRows] = await pool.query(`
+            SELECT id, quote_text, quoted_person
+            FROM quote_bot_quotes
+            ORDER BY RAND()
+            LIMIT 1
+        `);
+
+        return fallbackRows[0] ?? null;
+    }
+
     return rows[0] ?? null;
 }
 
-async function getRandomQuoteByPerson(person) {
-    const sql = `
+async function getRandomQuoteByPerson(person, excludeId = null) {
+    let sql = `
         SELECT id, quote_text, quoted_person
         FROM quote_bot_quotes
         WHERE LOWER(quoted_person) = LOWER(?)
+    `;
+    const params = [person];
+
+    if (excludeId !== null) {
+        sql += ` AND id != ?`;
+        params.push(excludeId);
+    }
+
+    sql += `
         ORDER BY RAND()
         LIMIT 1
     `;
 
-    const [rows] = await pool.query(sql, [person]);
+    const [rows] = await pool.query(sql, params);
+
+    // Fallback in case that person only has one quote and it matches excludeId
+    if (rows.length === 0 && excludeId !== null) {
+        const [fallbackRows] = await pool.query(`
+            SELECT id, quote_text, quoted_person
+            FROM quote_bot_quotes
+            WHERE LOWER(quoted_person) = LOWER(?)
+            ORDER BY RAND()
+            LIMIT 1
+        `, [person]);
+
+        return fallbackRows[0] ?? null;
+    }
+
     return rows[0] ?? null;
+}
+
+function rememberLastQuote(row) {
+    if (row?.id != null) {
+        lastPostedQuoteId = row.id;
+    }
 }
 
 async function fetchGeneralChannel() {
@@ -93,7 +150,7 @@ client.once(Events.ClientReady, async () => {
     cron.schedule(DAILY_CRON, async () => {
         try {
             const generalChannel = await fetchGeneralChannel();
-            const row = await getRandomQuote();
+            const row = await getRandomQuote(lastPostedQuoteId);
 
             if (!row) {
                 await generalChannel.send('No quotes found yet for the daily quote.');
@@ -104,42 +161,54 @@ client.once(Events.ClientReady, async () => {
                 content: `☀️ **Daily Quote**\n${formatQuote(row)}`
             });
 
+            rememberLastQuote(row);
             console.log('Daily quote posted successfully.');
         } catch (err) {
             console.error('Failed to post daily quote:', err);
         }
     });
 
-    // Every hour, 5% chance to post a random quote
+    // Every hour, chance starts at 5% and increases by 1% for each miss
     cron.schedule(HOURLY_CHANCE_CRON, async () => {
         try {
-            const roll = Math.random();
+            const roll = Math.random() * 100;
 
-            if (roll >= 0.05) {
-                console.log(`Hourly random quote skipped. Roll was ${roll.toFixed(4)}`);
+            if (roll >= currentHourlyChance) {
+                console.log(
+                    `Hourly quote skipped. Roll: ${roll.toFixed(2)} | Chance was ${currentHourlyChance}%`
+                );
+                currentHourlyChance += 1;
                 return;
             }
 
             const generalChannel = await fetchGeneralChannel();
-            const row = await getRandomQuote();
+            const row = await getRandomQuote(lastPostedQuoteId);
 
             if (!row) {
                 console.log('No quotes found for hourly random chance post.');
+                currentHourlyChance = BASE_HOURLY_CHANCE;
                 return;
             }
 
             await generalChannel.send({
-                content: `🎲 **Lucky Hourly Quote**\n${formatQuote(row)}`
+                content: `@everyone\n${formatQuote(row)}`,
+                allowedMentions: { parse: ['everyone'] }
             });
 
-            console.log(`Hourly random quote posted. Roll was ${roll.toFixed(4)}`);
+            rememberLastQuote(row);
+
+            console.log(
+                `Hourly quote posted. Roll: ${roll.toFixed(2)} | Chance was ${currentHourlyChance}%`
+            );
+
+            currentHourlyChance = BASE_HOURLY_CHANCE;
         } catch (err) {
             console.error('Failed hourly random quote check:', err);
         }
     });
 
     console.log('Daily quote scheduler started.');
-    console.log('Hourly 5% quote scheduler started.');
+    console.log('Hourly escalating chance quote scheduler started.');
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -178,7 +247,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         else if (commandName === 'randomquote') {
-            const row = await getRandomQuote();
+            const row = await getRandomQuote(lastPostedQuoteId);
 
             if (!row) {
                 await interaction.reply({
@@ -194,6 +263,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 content: formatQuote(row)
             });
 
+            rememberLastQuote(row);
+
             await interaction.reply({
                 content: `Posted a random quote in <#${GENERAL_CHANNEL_ID}>.`,
                 ephemeral: true
@@ -202,7 +273,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         else if (commandName === 'quotesbyperson') {
             const person = interaction.options.getString('person');
-            const row = await getRandomQuoteByPerson(person);
+            const row = await getRandomQuoteByPerson(person, lastPostedQuoteId);
 
             if (!row) {
                 await interaction.reply({
@@ -218,6 +289,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 content: formatQuote(row)
             });
 
+            rememberLastQuote(row);
+
             await interaction.reply({
                 content: `Posted a quote from **${person}** in <#${GENERAL_CHANNEL_ID}>.`,
                 ephemeral: true
@@ -231,7 +304,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 SELECT id, quote_text, quoted_person
                 FROM quote_bot_quotes
             `;
-            let sqlParams = [];
+            const sqlParams = [];
 
             if (person) {
                 sql += ` WHERE LOWER(quoted_person) = LOWER(?)`;
@@ -263,14 +336,6 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         else if (commandName === 'editquote') {
-            if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageGuild)) {
-                await interaction.reply({
-                    content: 'You do not have permission to edit quotes.',
-                    ephemeral: true
-                });
-                return;
-            }
-
             const id = interaction.options.getInteger('id');
             const newQuote = interaction.options.getString('quote');
             const newPerson = interaction.options.getString('person');
@@ -310,14 +375,6 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         else if (commandName === 'deletequote') {
-            if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageGuild)) {
-                await interaction.reply({
-                    content: 'You do not have permission to delete quotes.',
-                    ephemeral: true
-                });
-                return;
-            }
-
             const id = interaction.options.getInteger('id');
 
             const [rows] = await pool.query(
@@ -335,6 +392,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
             await pool.query('DELETE FROM quote_bot_quotes WHERE id = ?', [id]);
 
+            if (lastPostedQuoteId === id) {
+                lastPostedQuoteId = null;
+            }
+
             await interaction.reply({
                 content: `Deleted quote **#${id}**.`,
                 ephemeral: true
@@ -342,15 +403,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         else if (commandName === 'everyonequote') {
-            if (!interaction.memberPermissions.has(PermissionsBitField.Flags.ManageGuild)) {
-                await interaction.reply({
-                    content: 'You do not have permission to use this command.',
-                    ephemeral: true
-                });
-                return;
-            }
-
-            const row = await getRandomQuote();
+            const row = await getRandomQuote(lastPostedQuoteId);
 
             if (!row) {
                 await interaction.reply({
@@ -366,6 +419,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 content: `@everyone\n${formatQuote(row)}`,
                 allowedMentions: { parse: ['everyone'] }
             });
+
+            rememberLastQuote(row);
 
             await interaction.reply({
                 content: `Posted an @everyone quote in <#${GENERAL_CHANNEL_ID}>.`,

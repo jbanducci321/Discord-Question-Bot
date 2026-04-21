@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { REST, Routes, SlashCommandBuilder } from 'discord.js';
 
 const commands = [
     new SlashCommandBuilder()
@@ -48,8 +48,7 @@ const commands = [
         .addStringOption(option =>
             option.setName('person')
                 .setDescription('New person name')
-                .setRequired(false))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+                .setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('deletequote')
@@ -57,13 +56,11 @@ const commands = [
         .addIntegerOption(option =>
             option.setName('id')
                 .setDescription('Quote ID')
-                .setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+                .setRequired(true)),
 
     new SlashCommandBuilder()
         .setName('everyonequote')
         .setDescription('Ping everyone in general with a random quote')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
