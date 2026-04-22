@@ -668,7 +668,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         else if (commandName === 'annoydaniel') {
             try {
-                const user = await client.users.fetch('593595572557053952');
+                const user = await client.users.fetch('135491462849757185');
 
                 const senderMention = `<@${interaction.user.id}>`;
 
