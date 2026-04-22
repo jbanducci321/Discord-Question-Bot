@@ -29,11 +29,11 @@ const SIXTY_SEVEN_CRON = '7 18 * * *';
 const BIRTHDAY_CHECK_CRON = '0 0 * * *';
 
 // Hardcoded 67 ping target
-const SIX_SEVEN_TARGET = '1016444274625237042'; // AKA Shannyn
+const SIX_SEVEN_VICTIM = '1016444274625237042'; // AKA Shannyn
 
 // Hourly chance system
 const BASE_HOURLY_CHANCE = 5;
-let currentHourlyChance = BASE_HOURLY_CHANCE;
+let currentHourlyChance = BASE_HOURLY_CHANCE; // starts the currently hourly chance at a base 5%
 
 // Track last displayed quote so random posts do not repeat back-to-back
 let lastPostedQuoteId = null;
@@ -197,7 +197,7 @@ client.once(Events.ClientReady, async () => {
         timezone: APP_TIMEZONE
     });
 
-    // Every hour, chance starts at 5% and increases by 1% for each miss
+    // Every hour, chance starts at 5% and increases by 0.5% for each miss
     cron.schedule(HOURLY_CHANCE_CRON, async () => {
         try {
             const roll = Math.random() * 100;
@@ -206,7 +206,7 @@ client.once(Events.ClientReady, async () => {
                 console.log(
                     `Hourly quote skipped. Roll: ${roll.toFixed(2)} | Chance was ${currentHourlyChance}%`
                 );
-                currentHourlyChance += 1;
+                currentHourlyChance += 0.5; // increments odds by 0.5 for each miss until it is hit
                 return;
             }
 
@@ -220,7 +220,7 @@ client.once(Events.ClientReady, async () => {
             }
 
             await generalChannel.send({
-                content: `@everyone\n${formatQuote(row)}`,
+                content: `@everyone Random hourly quote hit at ${currentHourlyChance}% odds:\n${formatQuote(row)}`,
                 allowedMentions: { parse: ['everyone'] }
             });
 
@@ -247,7 +247,7 @@ client.once(Events.ClientReady, async () => {
             const generalChannel = await fetchGeneralChannel();
 
             await generalChannel.send({
-                content: `<@${SIX_SEVEN_TARGET}> 67`
+                content: `<@${SIX_SEVEN_VICTIM}> 67`
             });
 
             console.log('Posted daily 67 message.');
@@ -259,36 +259,50 @@ client.once(Events.ClientReady, async () => {
     });
 
     // ============================================================
-    // 67 DM SPAM TEST (TEMPORARY)
-    // Sends a DM every 5 seconds for 1 minute at 6:07 PM
-    // COMMENT OUT THIS ENTIRE BLOCK WHEN DONE TESTING
+    // 67 DM SPAM (TEMPORARY)
+    // Sends 67 DMs for 1 minute at 6:07 PM
+    // TODO: COMMENT OUT THIS ENTIRE BLOCK WHEN DONE ANNOYING SHANNYN
     // ============================================================
     cron.schedule(SIXTY_SEVEN_CRON, async () => {
         try {
-            const user = await client.users.fetch(SIX_SEVEN_TARGET);
+            const user = await client.users.fetch(SIX_SEVEN_VICTIM);
 
-            console.log('Starting 67 DM spam test...');
+            console.log('Starting 67 DM spam');
+
+            const totalMessages = 67;
+            const totalDuration = 60000; // 60 seconds
+            const startTime = Date.now();
 
             let count = 0;
 
-            const interval = setInterval(async () => {
+            const sendNext = async () => {
+                if (count >= totalMessages) {
+                    console.log(`Total sent DMs: ${count}`);
+                    console.log('Finished 67 DM spam.');
+                    return;
+                }
+
                 try {
                     await user.send('67');
                     count++;
-                    console.log(`Sent DM #${count}`);
+                    // console.log(`Sent DM #${count}`);
                 } catch (err) {
-                    console.error('Failed to send DM during spam:', err);
+                    console.error('Failed to send DM:', err);
                 }
+                
 
-                // Stop after 1 minute (30 messages at 2s interval)
-                if (count >= 30) {
-                    clearInterval(interval);
-                    console.log('Stopped 67 DM spam test.');
-                }
-            }, 2000); // 2 seconds
+                // Calculate when the NEXT message should be sent
+                const nextTargetTime = startTime + ((count + 1) * totalDuration / totalMessages);
+                const delay = nextTargetTime - Date.now();
+
+                setTimeout(sendNext, Math.max(0, delay));
+            };
+
+            // Start immediately
+            sendNext();
 
         } catch (err) {
-            console.error('Failed to start DM spam test:', err);
+            console.error('Failed to start DM test:', err);
         }
     }, {
         timezone: APP_TIMEZONE
@@ -676,6 +690,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         else if (commandName === 'purebrainrot') {
+            let count = 0;
             try {
                 const user = interaction.user;
 
@@ -684,22 +699,38 @@ client.on(Events.InteractionCreate, async interaction => {
                     ephemeral: true
                 });
 
-                let count = 0;
+                console.log('Starting pure brainrot');
 
-                const interval = setInterval(async () => {
-                    try {
-                        await user.send('67');
-                        count++;
+            const totalMessages = 67;
+            const totalDuration = 60000; // 60 seconds
+            const startTime = Date.now();
 
-                        if (count >= 60) {
-                            clearInterval(interval);
-                            console.log(`Stopped purebrainrot DM for ${user.id}.`);
-                        }
-                    } catch (err) {
-                        console.error('Failed to send purebrainrot DM:', err);
-                        clearInterval(interval);
-                    }
-                }, 1000);
+            
+
+            const sendNext = async () => {
+                if (count >= totalMessages) {
+                    console.log('Finished pure brainrot spam.');
+                    console.log(`Total sent DMs: ${count}`);
+                    return;
+                }
+
+                try {
+                    await user.send('67');
+                    count++;
+                    // console.log(`Sent DM #${count}`);
+                } catch (err) {
+                    console.error('Failed to send DM:', err);
+                }
+
+                // Calculate when the NEXT message should be sent
+                const nextTargetTime = startTime + ((count + 1) * totalDuration / totalMessages);
+                const delay = nextTargetTime - Date.now();
+
+                setTimeout(sendNext, Math.max(0, delay));
+            };
+
+            // Start immediately
+            sendNext();
             } catch (err) {
                 console.error('purebrainrot command failed:', err);
 
