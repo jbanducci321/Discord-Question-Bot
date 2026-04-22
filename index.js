@@ -29,7 +29,7 @@ const SIXTY_SEVEN_CRON = '7 18 * * *';
 const BIRTHDAY_CHECK_CRON = '0 0 * * *';
 
 // Hardcoded 67 ping target
-const SIXTY_SEVEN_USER_ID = '1016444274625237042'; // AKA Shannyn
+const SIX_SEVEN_TARGET = '1016444274625237042'; // AKA Shannyn
 
 // Hourly chance system
 const BASE_HOURLY_CHANCE = 5;
@@ -247,12 +247,48 @@ client.once(Events.ClientReady, async () => {
             const generalChannel = await fetchGeneralChannel();
 
             await generalChannel.send({
-                content: `<@${SIXTY_SEVEN_USER_ID}> 67`
+                content: `<@${SIX_SEVEN_TARGET}> 67`
             });
 
             console.log('Posted daily 67 message.');
         } catch (err) {
             console.error('Failed to post 67 message:', err);
+        }
+    }, {
+        timezone: APP_TIMEZONE
+    });
+
+    // ============================================================
+    // 67 DM SPAM TEST (TEMPORARY)
+    // Sends a DM every 5 seconds for 1 minute at 6:07 PM
+    // COMMENT OUT THIS ENTIRE BLOCK WHEN DONE TESTING
+    // ============================================================
+    cron.schedule(SIXTY_SEVEN_CRON, async () => {
+        try {
+            const user = await client.users.fetch(SIX_SEVEN_TARGET);
+
+            console.log('Starting 67 DM spam test...');
+
+            let count = 0;
+
+            const interval = setInterval(async () => {
+                try {
+                    await user.send('67');
+                    count++;
+                    console.log(`Sent DM #${count}`);
+                } catch (err) {
+                    console.error('Failed to send DM during spam:', err);
+                }
+
+                // Stop after 1 minute (30 messages at 2s interval)
+                if (count >= 30) {
+                    clearInterval(interval);
+                    console.log('Stopped 67 DM spam test.');
+                }
+            }, 2000); // 2 seconds
+
+        } catch (err) {
+            console.error('Failed to start DM spam test:', err);
         }
     }, {
         timezone: APP_TIMEZONE
@@ -614,6 +650,71 @@ client.on(Events.InteractionCreate, async interaction => {
                 content: `Deleted quote **#${id}**.`,
                 ephemeral: true
             });
+        }
+
+        else if (commandName === 'annoydaniel') {
+            try {
+                const user = await client.users.fetch('593595572557053952');
+
+                const senderMention = `<@${interaction.user.id}>`;
+
+                await user.send(`Fuck you -from ${senderMention}`);
+
+                await interaction.reply({
+                    content: '✅ DM sent successfully.',
+                    ephemeral: true
+                });
+
+            } catch (err) {
+                console.error('DM failed:', err);
+
+                await interaction.reply({
+                    content: '❌ Failed to send DM. Check console.',
+                    ephemeral: true
+                });
+            }
+        }
+
+        else if (commandName === 'purebrainrot') {
+            try {
+                const user = interaction.user;
+
+                await interaction.reply({
+                    content: 'Prepare for pure brainrot',
+                    ephemeral: true
+                });
+
+                let count = 0;
+
+                const interval = setInterval(async () => {
+                    try {
+                        await user.send('67');
+                        count++;
+
+                        if (count >= 30) {
+                            clearInterval(interval);
+                            console.log(`Stopped purebrainrot DM for ${user.id}.`);
+                        }
+                    } catch (err) {
+                        console.error('Failed to send purebrainrot DM:', err);
+                        clearInterval(interval);
+                    }
+                }, 2000);
+            } catch (err) {
+                console.error('purebrainrot command failed:', err);
+
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.followUp({
+                        content: 'Failed to start DM spam.',
+                        ephemeral: true
+                    });
+                } else {
+                    await interaction.reply({
+                        content: 'Failed to start DM spam.',
+                        ephemeral: true
+                    });
+                }
+            }
         }
 
         else if (commandName === 'everyonequote') {

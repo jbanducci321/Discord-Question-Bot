@@ -84,7 +84,16 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('everyonequote')
-        .setDescription('Ping everyone in general with a random quote')
+        .setDescription('Ping everyone in general with a random quote'),
+
+    new SlashCommandBuilder()
+    .setName('annoydaniel')
+    .setDescription('Send Daniel a nice DM'),
+
+    new SlashCommandBuilder()
+    .setName('purebrainrot')
+    .setDescription('Use at your own risk'),
+
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
